@@ -34,24 +34,8 @@ static DRVFN routineTable[] =
 	{ INDEX_DrvEnableSurface,			(PFN)DrvEnableSurface		},
 	{ INDEX_DrvDisableSurface,			(PFN)DrvDisableSurface		},
 	{ INDEX_DrvAssertMode,				(PFN)DrvAssertMode			},
-	{ INDEX_DrvNotify,					(PFN)DrvNotify				},
-
-	{ INDEX_DrvTextOut,					(PFN)DrvTextOut				},
 	{ INDEX_DrvBitBlt,					(PFN)DrvBitBlt				},
 	{ INDEX_DrvCopyBits,				(PFN)DrvCopyBits			},
-	{ INDEX_DrvStrokePath,				(PFN)DrvStrokePath			},
-	{ INDEX_DrvLineTo,					(PFN)DrvLineTo				},
-	{ INDEX_DrvStrokeAndFillPath,		(PFN)DrvStrokeAndFillPath	},
-	{ INDEX_DrvStretchBlt,				(PFN)DrvStretchBlt			},
-	{ INDEX_DrvAlphaBlend,				(PFN)DrvAlphaBlend			},
-	{ INDEX_DrvTransparentBlt,			(PFN)DrvTransparentBlt		},
-	{ INDEX_DrvGradientFill,			(PFN)DrvGradientFill		},
-	{ INDEX_DrvPlgBlt,					(PFN)DrvPlgBlt				},
-	{ INDEX_DrvStretchBltROP,			(PFN)DrvStretchBltROP		},
-
-#if (NTDDI_VERSION >= NTDDI_VISTA)
-	{ INDEX_DrvRenderHint,				(PFN)DrvRenderHint			},
-#endif
 
 	{ INDEX_DrvEscape,					(PFN)DrvEscape				},
 	{ INDEX_DrvMovePointer,				(PFN)DrvMovePointer			},
@@ -60,18 +44,7 @@ static DRVFN routineTable[] =
 
 // Define routes to be called within the mirror driver.
 #define hooks		  HOOK_BITBLT				/* DrvBitBlt function				*/	\
-					| HOOK_TEXTOUT				/* DrvTextOut function				*/	\
-					| HOOK_COPYBITS				/* DrvCopyBits function				*/	\
-					| HOOK_STROKEPATH			/* DrvStrokePath function			*/	\
-					| HOOK_LINETO				/* DrvLineTo function				*/	\
-					| HOOK_FILLPATH				/* DrvFillPath function				*/	\
-					| HOOK_STROKEANDFILLPATH	/* DrvStrokeAndFillPath function	*/	\
-					| HOOK_STRETCHBLT			/* DrvStretchBlt function			*/	\
-					| HOOK_ALPHABLEND			/* DrvAlphaBlend function			*/	\
-					| HOOK_TRANSPARENTBLT		/* DrvTransparentBlt function		*/	\
-					| HOOK_GRADIENTFILL			/* DrvGradientFill function			*/	\
-					| HOOK_PLGBLT				/* DrvPlgBlt function				*/	\
-					| HOOK_STRETCHBLTROP		/* DrvStretchBltROP function		*/ 
+					| HOOK_COPYBITS				/* DrvCopyBits function				*/
 
 /*
 The main entry point for the driver.
@@ -253,10 +226,26 @@ HSURF DrvEnableSurface(
 		return (FALSE);
 	}
 
-	// Allocate memory for the framebuffer. This can be read in the user space.
-	ppdev->pVideoMemory = EngMapFile(L"\\SystemRoot\\gdihook.dat", ppdev->cxScreen * ppdev->cyScreen * bytesPerPixel, &ppdev->hMem);
+	ULONG allocSize = (sizeof(CHANGES_BUFFER) + (sizeof(CHANGE) * 2000)) + (ppdev->cxScreen * ppdev->cyScreen * bytesPerPixel);
+	ULONG changesStart = (sizeof(CHANGES_BUFFER));
+	ULONG framebufferStart = (changesStart + (sizeof(CHANGE) * 2000));
 
-	EngModifySurface(hsurf, ppdev->hdevEng, flHooks, 0, (DHSURF)ppdev, ppdev->pVideoMemory, ppdev->cxScreen * bytesPerPixel, NULL);
+	// Allocate memory for the framebuffer. This can be read in the user space.
+	ppdev->sharedMemory = EngMapFile(L"\\SystemRoot\\gdihook.dat", allocSize, &ppdev->hMem);
+
+	// Empty the memory.
+	for (ULONG i = 0; i < allocSize; i++)
+	{
+		((CHAR*)ppdev->sharedMemory)[i] = 0;
+	}
+
+	// Store the framebuffer, changes buffer and changes pointers.
+	ppdev->cb = ppdev->sharedMemory;
+	ppdev->changes = (PVOID)((CHAR*)ppdev->sharedMemory + changesStart);
+	ppdev->framebuffer = (PVOID)((CHAR*)ppdev->sharedMemory + framebufferStart);
+
+	// Modify the surface to accept the new allocated memory.
+	EngModifySurface(hsurf, ppdev->hdevEng, flHooks, 0, (DHSURF)ppdev, ppdev->framebuffer, ppdev->cxScreen * bytesPerPixel, NULL);
 
 	if (!EngAssociateSurface(hsurf, ppdev->hdevEng, flHooks))
 	{
@@ -273,38 +262,6 @@ HSURF DrvEnableSurface(
 }
 
 /*
-The DrvNotify function allows a display driver to be notified about certain information by GDI.
-*/
-VOID DrvNotify(
-	SURFOBJ*	pso,
-	ULONG		iType,
-	PVOID		pvData)
-{
-	DbOut((0, "Entered routine DrvNotify\n"));
-
-	UNREFERENCED_PARAMETER(pso);
-	UNREFERENCED_PARAMETER(pvData);
-
-	switch (iType)
-	{
-		case DN_DEVICE_ORIGIN:
-		{
-			POINTL* coordinates = (POINTL*)pvData;
-
-			DbOut((0, "Device origin: X=%x,Y=%y\n", coordinates->x, coordinates->y));
-
-			break;
-		}
-		case DN_DRAWING_BEGIN:
-		{
-			DbOut((0, "Drawing started"));
-
-			break;
-		}
-	}
-}
-
-/*
 The DrvDisableSurface function is used by GDI to notify a driver that the surface created by
 DrvEnableSurface for the current device is no longer needed.
 */
@@ -316,6 +273,9 @@ VOID DrvDisableSurface(
 	PPDEV ppdev = (PPDEV)dhpdev;
 
 	EngDeleteSurface(ppdev->hsurfEng);
+
+	EngUnmapFile(ppdev->hMem);
+
 	EngFreeMem(ppdev->pvTmpBuffer);
 }
 
@@ -354,249 +314,25 @@ BOOL DrvBitBlt(
 {
 	DbOut((0, "Entered routine DrvBitBlt\n"));
 
-	PPDEV ppdev = ((PPDEV)(((SURFOBJ *)psoDst)->dhpdev));
+	if (psoDst)
+	{
+		PPDEV ppdev = ((PPDEV)(((SURFOBJ *)psoDst)->dhpdev));
 
-	if (pco)
-	{
-		AddClipRegion(&ppdev->cb, pco, prclDst);
-	}
-	else
-	{
-		AddChange(&ppdev->cb, prclDst);
+		if (ppdev)
+		{
+			if (pco)
+			{
+				AddClipRegion(&ppdev->iCb, pco, prclDst);
+			}
+			else
+			{
+				AddChange(&ppdev->iCb, prclDst);
+			}
+		}
 	}
 
 	return EngBitBlt(psoDst, psoSrc, psoMask, pco, pxlo, prclDst, pptlSrc, pptlMask, pbo, pptlBrush, rop4);
 }
-
-/*
-The DrvTextOut function is the entry point from GDI that calls for the driver to render a set of glyphs at specified positions.
-*/
-BOOL DrvTextOut(
-	IN			SURFOBJ*		psoDst,
-	IN			STROBJ*			pstro,
-	IN			FONTOBJ*		pfo,
-	IN			CLIPOBJ*		pco,
-	IN			RECTL*			prclExtra,
-	IN			RECTL*			prclOpaque,
-	IN			BRUSHOBJ*		pboFore,
-	IN			BRUSHOBJ*		pboOpaque,
-	IN			POINTL*			pptlOrg,
-	IN			MIX				mix)
-{
-	DbOut((0, "Entered routine DrvTextOut\n"));
-
-	return EngTextOut(psoDst, pstro, pfo, pco, prclExtra, prclOpaque, pboFore, pboOpaque, pptlOrg, mix);
-}
-
-/*
-The DrvStrokePath function strokes (outlines) a path.
-*/
-BOOL DrvStrokePath(
-	SURFOBJ*		pso,
-	PATHOBJ*		ppo,
-	CLIPOBJ*		pco,
-	XFORMOBJ*		pxo,
-	BRUSHOBJ*		pbo,
-	POINTL*			pptlBrush,
-	LINEATTRS*		pLineAttrs,
-	MIX				mix)
-{
-	DbOut((0, "Entered routine DrvStrokePath\n"));
-		
-	return EngStrokePath(pso, ppo, pco, pxo, pbo, pptlBrush, pLineAttrs, mix);
-}
-
-/*
-The DrvLineTo function draws a single, solid, integer-only cosmetic line.
-*/
-BOOL DrvLineTo(
-	SURFOBJ*		pso,
-	CLIPOBJ*		pco,
-	BRUSHOBJ*		pbo,
-	LONG			x1,
-	LONG			y1,
-	LONG			x2,
-	LONG			y2,
-	RECTL*			prclBounds,
-	MIX				mix)
-{
-	DbOut((0, "Entered routine DrvLineTo\n"));
-
-	return EngLineTo(pso, pco, pbo, x1, y1, x2, y2, prclBounds, mix);
-}
-
-/*
-The DrvFillPath function is an optional entry point to handle the filling of closed paths.
-*/
-BOOL DrvFillPath(
-	SURFOBJ*		pso,
-	PATHOBJ*		ppo,
-	CLIPOBJ*		pco,
-	BRUSHOBJ*		pbo,
-	PPOINTL			pptlBrushOrg,
-	MIX				mix,
-	FLONG			flOptions)
-{
-	DbOut((0, "Entered routine DrvFillPath\n"));
-	
-	return EngFillPath(pso, ppo, pco, pbo, pptlBrushOrg, mix, flOptions);
-}
-
-/*
-The DrvStrokeAndFillPath function strokes (outlines) and fills a path concurrently.
-*/
-BOOL DrvStrokeAndFillPath(
-	SURFOBJ*		pso,
-	PATHOBJ*		ppo,
-	CLIPOBJ*		pco,
-	XFORMOBJ*		pxo,
-	BRUSHOBJ*		pboStroke,
-	LINEATTRS*		plineattrs,
-	BRUSHOBJ*		pboFill,
-	POINTL*			pptlBrushOrg,
-	MIX				mixFill,
-	FLONG			flOptions)
-{
-	DbOut((0, "Entered routine DrvStrokeAndFillPath\n"));
-	
-	return EngStrokeAndFillPath(pso, ppo, pco, pxo, pboStroke, plineattrs, pboFill, pptlBrushOrg, mixFill, flOptions);
-}
-
-/*
-The DrvTransparentBlt function provides bit-block transfer capabilities with transparency.
-*/
-BOOL DrvTransparentBlt(
-	SURFOBJ*		psoDst,
-	SURFOBJ*		psoSrc,
-	CLIPOBJ*		pco,
-	XLATEOBJ*		pxlo,
-	RECTL*			prclDst,
-	RECTL*			prclSrc,
-	ULONG			iTransColor,
-	ULONG			ulReserved)
-{
-	DbOut((0, "Entered routine DrvTransparentBlt\n"));
-
-	return EngTransparentBlt(psoDst, psoSrc, pco, pxlo, prclDst, prclSrc, iTransColor, ulReserved);
-}
-
-/*
-The DrvAlphaBlend function provides bit-block transfer capabilities with alpha blending.
-*/
-BOOL DrvAlphaBlend(
-	SURFOBJ*		psoDst,
-	SURFOBJ*		psoSrc,
-	CLIPOBJ*		pco,
-	XLATEOBJ*		pxlo,
-	RECTL*			prclDst,
-	RECTL*			prclSrc,
-	BLENDOBJ*		pBlendObj)
-{
-	DbOut((0, "Entered routine DrvAlphaBlend\n"));
-
-	return EngAlphaBlend(psoDst, psoSrc, pco, pxlo, prclDst, prclSrc, pBlendObj);
-}
-
-/*
-The DrvGradientFill function shades the specified primitives.
-*/
-BOOL DrvGradientFill(
-	SURFOBJ*		pso,
-	CLIPOBJ*		pco,
-	XLATEOBJ*		pxlo,
-	TRIVERTEX*		pVertex,
-	ULONG			nVertex,
-	PVOID			pMesh,
-	ULONG			nMesh,
-	RECTL*			prclExtents,
-	POINTL*			pptlDitherOrg,
-	ULONG			ulMode)
-{
-	DbOut((0, "Entered routine DrvGradientFill\n"));
-
-	return EngGradientFill(pso, pco, pxlo, pVertex, nVertex, pMesh, nMesh, prclExtents, pptlDitherOrg, ulMode);
-
-}
-
-/*
-The DrvStretchBlt function provides stretching bit-block transfer capabilities between any combination of
-device-managed and GDI-managed surfaces.
-*/
-BOOL DrvStretchBlt(
-	SURFOBJ*			psoDst,
-	SURFOBJ*			psoSrc,
-	SURFOBJ*			psoMsk,
-	CLIPOBJ*			pco,
-	XLATEOBJ*			pxlo,
-	COLORADJUSTMENT*	pca,
-	POINTL*				pptlHTOrg,
-	RECTL*				prclDst,
-	RECTL*				prclSrc,
-	POINTL*				pptlMsk,
-	ULONG				iMode)
-{
-	DbOut((0, "Entered routine DrvStretchBlt\n"));
-
-	return EngStretchBlt(psoDst, psoSrc, psoMsk, pco, pxlo, pca, pptlHTOrg, prclDst, prclSrc, pptlMsk, iMode);
-}
-
-/*
-The DrvStretchBltROP function performs a stretching bit-block transfer using a ROP.
-*/
-BOOL DrvStretchBltROP(
-	SURFOBJ*			psoTrg,
-	SURFOBJ*			psoSrc,
-	SURFOBJ*			psoMask,
-	CLIPOBJ*			pco,
-	XLATEOBJ*			pxlo,
-	COLORADJUSTMENT*	pca,
-	POINTL*				pptlBrushOrg,
-	RECTL*				prclTrg,
-	RECTL*				prclSrc,
-	POINTL*				pptlMask,
-	ULONG				iMode,
-	BRUSHOBJ*			pbo,
-	ROP4				rop4)
-{
-	DbOut((0, "Entered routine DrvStretchBltROP\n"));
-
-	return EngStretchBltROP(psoTrg, psoSrc, psoMask, pco, pxlo, pca, pptlBrushOrg, prclTrg, prclSrc, pptlMask, iMode, pbo, rop4);
-}
-
-/*
-The DrvPlgBlt function provides rotate bit-block transfer capabilities between combinations of
-device-managed and GDI-managed surfaces.
-*/
-BOOL DrvPlgBlt(
-	SURFOBJ*			psoTrg,
-	SURFOBJ*			psoSrc,
-	SURFOBJ*			psoMsk,
-	CLIPOBJ*			pco,
-	XLATEOBJ*			pxlo,
-	COLORADJUSTMENT*	pca,
-	POINTL*				pptlBrushOrg,
-	POINTFIX*			pptfx,
-	RECTL*				prcl,
-	POINTL*				pptl,
-	ULONG				iMode)
-{
-	DbOut((0, "Entered routine DrvPlgBlt\n"));
-
-	return EngPlgBlt(psoTrg, psoSrc, psoMsk, pco, pxlo, pca, pptlBrushOrg, pptfx, prcl, pptl, iMode);
-}
-
-#if (NTDDI_VERSION >= NTDDI_VISTA)
-
-LONG DrvRenderHint(
-	DHPDEV				dhpdev,
-	ULONG				NotifyCode,
-	SIZE_T				Length,
-	PVOID				Data)
-{
-	return TRUE;
-}
-
-#endif
 
 /*
 The DrvAssertMode function sets the mode of the specified physical device to either the mode
@@ -636,40 +372,43 @@ ULONG DrvEscape(
 	UNREFERENCED_PARAMETER(pvOut);
 	
 	// Check if this is a SharpVNC Mirror Driver SDK message.
-	if (iEsc >= 0x100000 && (iEsc & 0x100000) != 0)
+	if (iEsc >= SVNC_ESC_ID && (iEsc & SVNC_ESC_ID) != 0)
 	{
+		if (!pso)
+		{
+			return TRUE;
+		}
+
 		// Get the PDEV for the current context.
 		PPDEV ppdev = ((PPDEV)(((SURFOBJ*)pso)->dhpdev));
 
 		switch (iEsc)
 		{
-			case 0x100001: // Enable hardware pointer capabilities
+			case SVNC_ESC_ENABLE_HW_POINTER: // Enable hardware pointer capabilities
 			{
 				ppdev->enableHwCursor = TRUE;
 
 				break;
 			}
-			case 0x100010: // Disable hardware pointer capabilities
+			case SVNC_ESC_DISABLE_HW_POINTER: // Disable hardware pointer capabilities
 			{
 				ppdev->enableHwCursor = FALSE;
 
 				break;
 			}
-			case 0x100011: // Get latest changes
+			case SVNC_ESC_GET_LATEST_CHANGES: // Get latest changes
 			{
-				CHANGES_BUFFER *cb = (CHANGES_BUFFER*)pvOut;
+				((CHANGES_BUFFER*)ppdev->cb)->count = ppdev->iCb.count;
 
-				ULONG count = ppdev->cb.count;
-
-				cb->count = count;
-
-				for (ULONG i = 0; i < count; ++i)
+				CHANGE* changes = (CHANGE*)ppdev->changes;
+								
+				for (ULONG i = 0; i < MAX_CHANGES; i++)
 				{
-					cb->changes[i].type				=	ppdev->cb.changes[i].type;
-					cb->changes[i].bounds.x			=	ppdev->cb.changes[i].bounds.x;
-					cb->changes[i].bounds.y			=	ppdev->cb.changes[i].bounds.y;
-					cb->changes[i].bounds.width		=	ppdev->cb.changes[i].bounds.width;
-					cb->changes[i].bounds.height	=	ppdev->cb.changes[i].bounds.height;
+					changes[i].type				=	ppdev->iCb.changes[i].type;
+					changes[i].bounds.x			=	ppdev->iCb.changes[i].bounds.x;
+					changes[i].bounds.y			=	ppdev->iCb.changes[i].bounds.y;
+					changes[i].bounds.width		=	ppdev->iCb.changes[i].bounds.width;
+					changes[i].bounds.height	=	ppdev->iCb.changes[i].bounds.height;
 				}
 
 				break;
@@ -690,6 +429,8 @@ VOID DrvMovePointer(
 	LONG			y,
 	RECTL			*prcl)
 {
+	DbOut((0, "Entered routine DrvMovePointer\n"));
+
 	// Get the PDEV for the current context.
 	PPDEV ppdev = ((PPDEV)(((SURFOBJ*)pso)->dhpdev));
 
@@ -716,6 +457,8 @@ ULONG DrvSetPointerShape(
 	RECTL			*prcl,
 	FLONG			fl)
 {
+	DbOut((0, "Entered routine DrvSetPointerShape\n"));
+
 	// Get the PDEV for the current context.
 	PPDEV ppdev = ((PPDEV)(((SURFOBJ*)pso)->dhpdev));
 
