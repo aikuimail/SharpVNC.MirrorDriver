@@ -290,7 +290,7 @@ BOOL DrvCopyBits(
 	IN			RECTL*			prclDst,
 	IN			POINTL*			pptlSrc)
 {
-	DbOut((0, "Entered routine DrvCopyBits\n"));
+	//DbOut((0, "Entered routine DrvCopyBits\n"));
 	
 	return DrvBitBlt(psoDst, psoSrc, NULL, pco, pxlo, prclDst, pptlSrc, NULL, NULL, NULL, 0xCCCC);
 }
@@ -312,7 +312,7 @@ BOOL DrvBitBlt(
 	IN			POINTL*			pptlBrush,
 	IN			ROP4			rop4)
 {
-	DbOut((0, "Entered routine DrvBitBlt\n"));
+	//DbOut((0, "Entered routine DrvBitBlt\n"));
 
 	if (psoDst)
 	{
@@ -328,6 +328,24 @@ BOOL DrvBitBlt(
 			{
 				AddChange(&ppdev->iCb, prclDst);
 			}
+
+			/*if (pptlSrc)
+			{
+				RECTL change = { 0 };
+				change.left = pptlSrc->x;
+				change.top = pptlSrc->y;
+				change.right = pptlSrc->x + (prclDst->right - prclDst->left);
+				change.bottom = pptlSrc->y + (prclDst->bottom - prclDst->top);
+
+				if (pco)
+				{
+					AddClipRegion(&ppdev->iCb, pco, &change);
+				}
+				else
+				{
+					AddChange(&ppdev->iCb, &change);
+				}
+			}*/
 		}
 	}
 
@@ -398,7 +416,7 @@ ULONG DrvEscape(
 			}
 			case SVNC_ESC_GET_LATEST_CHANGES: // Get latest changes
 			{
-				((CHANGES_BUFFER*)ppdev->cb)->count = ppdev->iCb.count;
+				((CHANGES_BUFFER*)ppdev->cb)->count = ppdev->iCb.count %= 2000;
 
 				CHANGE* changes = (CHANGE*)ppdev->changes;
 								

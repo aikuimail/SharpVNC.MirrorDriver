@@ -13,7 +13,7 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
-#define MAX_CHANGES 20000;			// The max number of changes.
+#define MAX_CHANGES 2000			// The max number of changes.
 
 typedef struct _CHANGE_BOUNDS
 {
@@ -32,16 +32,21 @@ typedef struct _CHANGE
 typedef struct _CHANGES_BUFFER
 {
 	ULONG count;					// The current count of changes.
-	CHANGE changes[20000];			// Array of changes.
 } CHANGES_BUFFER, *PCHANGES_BUFFER;
+
+typedef struct _INTERNAL_CHANGES_BUFFER
+{
+	ULONG count;
+	CHANGE changes[2000];
+} INTERNAL_CHANGES_BUFFER, *PINTERNAL_CHANGES_BUFFER;
 
 // Adds change bounds to the changes buffer.
 VOID AddChange(
-	CHANGES_BUFFER*		cb,
-	RECTL*				bounds);
+	INTERNAL_CHANGES_BUFFER*		cb,
+	RECTL*							bounds);
 
 // Adds the computed intersection of a clip region and destination bounds to the changes buffer.
 VOID AddClipRegion(
-	CHANGES_BUFFER*		cb,
-	CLIPOBJ*			pco,
-	RECTL*				dest);
+	INTERNAL_CHANGES_BUFFER*		cb,
+	CLIPOBJ*						pco,
+	RECTL*							dest);

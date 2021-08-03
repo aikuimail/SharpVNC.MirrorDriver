@@ -17,23 +17,15 @@ DEALINGS IN THE SOFTWARE.
 
 // Adds change bounds to the changes buffer.
 VOID AddChange(
-	CHANGES_BUFFER*		cb,
-	RECTL*				bounds)
+	INTERNAL_CHANGES_BUFFER*		cb,
+	RECTL*							bounds)
 {
-	if (!cb)
-	{
-		return;
-	}
 	if (!bounds)
 	{
 		return;
 	}
 
-	if (cb->count >= 20000)
-	{
-		cb->count = 0;
-	}
-
+	cb->count %= 2000;
 	ULONG count = cb->count;
 	cb->count++;
 
@@ -46,9 +38,9 @@ VOID AddChange(
 
 // Adds the computed intersection of a clip region and destination bounds to the changes buffer.
 VOID AddClipRegion(
-	CHANGES_BUFFER*		cb,
-	CLIPOBJ*			pco,
-	RECTL*				dest)
+	INTERNAL_CHANGES_BUFFER*		cb,
+	CLIPOBJ*						pco,
+	RECTL*							dest)
 {
 	if (!pco)
 	{
@@ -66,7 +58,38 @@ VOID AddClipRegion(
 		}
 		case DC_RECT:
 		{
-			AddChange(cb, &pco->rclBounds);
+			// There is one clip region.
+			// The destination bounds should be within the clip region, but first check.
+
+			RECTL bounds = { 0 };
+			bounds.left = dest->left;
+			bounds.right = dest->right;
+			bounds.top = dest->top;
+			bounds.bottom = dest->bottom;
+
+			if (bounds.left < pco->rclBounds.left)
+			{
+				bounds.left = pco->rclBounds.left;
+			}
+			if (bounds.right > pco->rclBounds.right)
+			{
+				bounds.right = pco->rclBounds.right;
+			}
+			if (bounds.top < pco->rclBounds.top)
+			{
+				bounds.top = pco->rclBounds.top;
+			}
+			if (bounds.bottom > pco->rclBounds.bottom)
+			{
+				bounds.bottom = pco->rclBounds.bottom;
+			}
+
+			if ((bounds.right - bounds.left) <= 0 || (bounds.bottom - bounds.top) <= 0)
+			{
+				return;
+			}
+
+			AddChange(cb, &bounds);
 
 			break;
 		}
@@ -76,16 +99,45 @@ VOID AddClipRegion(
 			ENUMRECTS rects;
 
 			CLIPOBJ_cEnumStart(pco, FALSE, CT_RECTANGLES, CD_ANY, 0);
-
+			
 			do
 			{
 				overflow = CLIPOBJ_bEnum(pco, sizeof(rects), (ULONG*)&rects);
 
 				for (RECTL* rect = &rects.arcl[0]; rects.c != 0; rects.c--, rect++)
 				{
-					AddChange(cb, rect);
+					RECTL bounds = { 0 };
+					bounds.left = dest->left;
+					bounds.right = dest->right;
+					bounds.top = dest->top;
+					bounds.bottom = dest->bottom;
+
+					if (bounds.left < rect->left)
+					{
+						bounds.left = rect->left;
+					}
+					if (bounds.right > rect->right)
+					{
+						bounds.right = rect->right;
+					}
+					if (bounds.top < rect->top)
+					{
+						bounds.top = rect->top;
+					}
+					if (bounds.bottom > rect->bottom)
+					{
+						bounds.bottom = rect->bottom;
+					}
+
+					if ((bounds.right - bounds.left) <= 0 || (bounds.bottom - bounds.top) <= 0)
+					{
+						continue;
+					}
+
+					AddChange(cb, &bounds);
 				}
-			} while (overflow);
+			}
+			while (overflow);
 
 			break;
 		}
