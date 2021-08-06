@@ -156,8 +156,7 @@ VP_STATUS HwGetVideoChildDescriptor(
 ULONG DriverEntry(
     PVOID                   Context1,
     PVOID                   Context2)
-{
-
+{    
     VIDEO_HW_INITIALIZATION_DATA initialisationData;
     VideoPortZeroMemory(&initialisationData, sizeof(VIDEO_HW_INITIALIZATION_DATA));
 

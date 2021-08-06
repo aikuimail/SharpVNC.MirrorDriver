@@ -40,6 +40,7 @@ static DRVFN routineTable[] =
 	{ INDEX_DrvMovePointer,				(PFN)DrvMovePointer			},
 	{ INDEX_DrvSetPointerShape,			(PFN)DrvSetPointerShape		},
 	{ INDEX_DrvAlphaBlend,				(PFN)DrvAlphaBlend			},
+	{ INDEX_DrvGetModes,				(PFN)DrvGetModes			}
 };
 
 // Define routes to be called within the mirror driver.
@@ -504,13 +505,13 @@ ULONG DrvSetPointerShape(
 }
 
 BOOL DrvAlphaBlend(
-	SURFOBJ* psoDst,
-	SURFOBJ* psoSrc,
-	CLIPOBJ* pco,
-	XLATEOBJ* pxlo,
-	RECTL* prclDst,
-	RECTL* prclSrc,
-	BLENDOBJ* pBlendObj)
+	SURFOBJ*		psoDst,
+	SURFOBJ*		psoSrc,
+	CLIPOBJ*		pco,
+	XLATEOBJ*		pxlo,
+	RECTL*			prclDst,
+	RECTL*			prclSrc,
+	BLENDOBJ*		pBlendObj)
 {
 	UNREFERENCED_PARAMETER(psoSrc);
 	UNREFERENCED_PARAMETER(pxlo);
@@ -537,4 +538,12 @@ BOOL DrvAlphaBlend(
 	}
 
 	return EngAlphaBlend(psoDst, psoSrc, pco, pxlo, prclDst, prclSrc, pBlendObj);
+}
+
+ULONG DrvGetModes(
+	HANDLE			hDriver,
+	ULONG			cjSize,
+	DEVMODEW*		pdm)
+{
+	return 0;
 }

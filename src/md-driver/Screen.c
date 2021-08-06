@@ -171,7 +171,7 @@ BOOL InitialisePDEV(
         }
     }
 
-    devInfo->flGraphicsCaps |= (GCAPS_WINDINGFILL | GCAPS_GEOMETRICWIDE);
+    devInfo->flGraphicsCaps |= (GCAPS_WINDINGFILL | GCAPS_GEOMETRICWIDE) | GCAPS2_REMOTEDRIVER;
 
     ULONG red       = 0;
     ULONG green     = 0;
