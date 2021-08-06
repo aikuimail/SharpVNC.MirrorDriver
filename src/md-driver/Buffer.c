@@ -17,9 +17,13 @@ DEALINGS IN THE SOFTWARE.
 
 // Adds change bounds to the changes buffer.
 VOID AddChange(
-	INTERNAL_CHANGES_BUFFER*		cb,
-	RECTL*							bounds)
+	INTERNAL_CHANGES_BUFFER* cb,
+	RECTL* bounds)
 {
+	if (!cb)
+	{
+		return;
+	}
 	if (!bounds)
 	{
 		return;
@@ -38,9 +42,9 @@ VOID AddChange(
 
 // Adds the computed intersection of a clip region and destination bounds to the changes buffer.
 VOID AddClipRegion(
-	INTERNAL_CHANGES_BUFFER*		cb,
-	CLIPOBJ*						pco,
-	RECTL*							dest)
+	INTERNAL_CHANGES_BUFFER* cb,
+	CLIPOBJ* pco,
+	RECTL* dest)
 {
 	if (!pco)
 	{
@@ -59,7 +63,6 @@ VOID AddClipRegion(
 		case DC_RECT:
 		{
 			// There is one clip region.
-			// The destination bounds should be within the clip region, but first check.
 
 			RECTL bounds = { 0 };
 			bounds.left = dest->left;
@@ -96,15 +99,15 @@ VOID AddClipRegion(
 		case DC_COMPLEX:
 		{
 			BOOL overflow;
-			ENUMRECTS rects;
+			ENUMRECTS crs;
 
 			CLIPOBJ_cEnumStart(pco, FALSE, CT_RECTANGLES, CD_ANY, 0);
-			
+
 			do
 			{
-				overflow = CLIPOBJ_bEnum(pco, sizeof(rects), (ULONG*)&rects);
+				overflow = CLIPOBJ_bEnum(pco, sizeof(crs), (ULONG*)&crs);
 
-				for (RECTL* rect = &rects.arcl[0]; rects.c != 0; rects.c--, rect++)
+				for (RECTL* cr = &crs.arcl[0]; crs.c != 0; crs.c--, cr++)
 				{
 					RECTL bounds = { 0 };
 					bounds.left = dest->left;
@@ -112,21 +115,21 @@ VOID AddClipRegion(
 					bounds.top = dest->top;
 					bounds.bottom = dest->bottom;
 
-					if (bounds.left < rect->left)
+					if (bounds.left < cr->left)
 					{
-						bounds.left = rect->left;
+						bounds.left = cr->left;
 					}
-					if (bounds.right > rect->right)
+					if (bounds.right > cr->right)
 					{
-						bounds.right = rect->right;
+						bounds.right = cr->right;
 					}
-					if (bounds.top < rect->top)
+					if (bounds.top < cr->top)
 					{
-						bounds.top = rect->top;
+						bounds.top = cr->top;
 					}
-					if (bounds.bottom > rect->bottom)
+					if (bounds.bottom > cr->bottom)
 					{
-						bounds.bottom = rect->bottom;
+						bounds.bottom = cr->bottom;
 					}
 
 					if ((bounds.right - bounds.left) <= 0 || (bounds.bottom - bounds.top) <= 0)

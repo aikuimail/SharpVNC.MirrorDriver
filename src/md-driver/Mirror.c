@@ -36,19 +36,20 @@ static DRVFN routineTable[] =
 	{ INDEX_DrvAssertMode,				(PFN)DrvAssertMode			},
 	{ INDEX_DrvBitBlt,					(PFN)DrvBitBlt				},
 	{ INDEX_DrvCopyBits,				(PFN)DrvCopyBits			},
-
 	{ INDEX_DrvEscape,					(PFN)DrvEscape				},
 	{ INDEX_DrvMovePointer,				(PFN)DrvMovePointer			},
-	{ INDEX_DrvSetPointerShape,			(PFN)DrvSetPointerShape		}
+	{ INDEX_DrvSetPointerShape,			(PFN)DrvSetPointerShape		},
+	{ INDEX_DrvAlphaBlend,				(PFN)DrvAlphaBlend			},
 };
 
 // Define routes to be called within the mirror driver.
 #define hooks		  HOOK_BITBLT				/* DrvBitBlt function				*/	\
-					| HOOK_COPYBITS				/* DrvCopyBits function				*/
+					| HOOK_COPYBITS				/* DrvCopyBits function				*/  \
+					| HOOK_ALPHABLEND			/* DrvAlphaBlend function			*/			
 
-/*
-The main entry point for the driver.
-*/
+/// <summary>
+/// The main entry point for the driver.
+/// </summary>
 BOOL DrvEnableDriver(
 	ULONG				iEngineVersion,
 	ULONG				cj,
@@ -75,9 +76,9 @@ BOOL DrvEnableDriver(
 	return (TRUE);
 }
 
-/*
-The DrvEnablePDEV function returns a description of the physical device's characteristics to GDI.
-*/
+/// <summary>
+/// The DrvEnablePDEV function returns a description of the physical device's characteristics to GDI.
+/// </summary>
 DHPDEV DrvEnablePDEV(
 	__in					DEVMODEW*	pDevmode,
 	__in_opt				PWSTR		pwszLogAddress,
@@ -111,7 +112,7 @@ DHPDEV DrvEnablePDEV(
 	// Save the current output handle.
 	ppdev->hDriver = hDriver;
 
-	if (!bInitPDEV(ppdev, pDevmode, &gdiInfo, &devInfo))
+	if (!InitialisePDEV(ppdev, pDevmode, &gdiInfo, &devInfo))
 	{
 		DbOut((0, "Routine DrvEnablePDEV failed at bInitPDEV\n"));
 
@@ -145,9 +146,9 @@ error_free:
 	return((DHPDEV)0);
 }
 
-/*
-The DrvCompletePDEV function stores the GDI handle of the physical device being created.
-*/
+/// <summary>
+/// The DrvCompletePDEV function stores the GDI handle of the physical device being created.
+/// </summary>
 VOID DrvCompletePDEV(
 	DHPDEV		dhpdev,
 	HDEV		hdev)
@@ -318,7 +319,7 @@ BOOL DrvBitBlt(
 	{
 		PPDEV ppdev = ((PPDEV)(((SURFOBJ *)psoDst)->dhpdev));
 
-		if (ppdev)
+		if (ppdev && &ppdev->iCb)
 		{
 			if (pco)
 			{
@@ -360,7 +361,7 @@ BOOL DrvAssertMode(
 	DHPDEV			dhpdev,
 	BOOL			bEnable)
 {
-	DbOut((0, "Entered routine DrvAssertMode\n"));
+	//DbOut((0, "Entered routine DrvAssertMode\n"));
 
 	UNREFERENCED_PARAMETER(bEnable);
 	UNREFERENCED_PARAMETER(dhpdev);
@@ -382,7 +383,7 @@ ULONG DrvEscape(
 	ULONG			cjOut,
 	PVOID			pvOut)
 {
-	DbOut((0, "Entered routine DrvEscape\n"));
+	//DbOut((0, "Entered routine DrvEscape\n"));
 
 	UNREFERENCED_PARAMETER(cjIn);
 	UNREFERENCED_PARAMETER(pvIn);
@@ -400,6 +401,11 @@ ULONG DrvEscape(
 		// Get the PDEV for the current context.
 		PPDEV ppdev = ((PPDEV)(((SURFOBJ*)pso)->dhpdev));
 
+		if (!ppdev)
+		{
+			return TRUE;
+		}
+
 		switch (iEsc)
 		{
 			case SVNC_ESC_ENABLE_HW_POINTER: // Enable hardware pointer capabilities
@@ -416,7 +422,16 @@ ULONG DrvEscape(
 			}
 			case SVNC_ESC_GET_LATEST_CHANGES: // Get latest changes
 			{
-				((CHANGES_BUFFER*)ppdev->cb)->count = ppdev->iCb.count %= 2000;
+				if (!ppdev->cb)
+				{
+					return TRUE;
+				}
+				if (!ppdev->cb)
+				{
+					return TRUE;
+				}
+
+				((CHANGES_BUFFER*)ppdev->cb)->count = ppdev->iCb.count % 2000;
 
 				CHANGE* changes = (CHANGE*)ppdev->changes;
 								
@@ -447,7 +462,7 @@ VOID DrvMovePointer(
 	LONG			y,
 	RECTL			*prcl)
 {
-	DbOut((0, "Entered routine DrvMovePointer\n"));
+	//DbOut((0, "Entered routine DrvMovePointer\n"));
 
 	// Get the PDEV for the current context.
 	PPDEV ppdev = ((PPDEV)(((SURFOBJ*)pso)->dhpdev));
@@ -475,7 +490,7 @@ ULONG DrvSetPointerShape(
 	RECTL			*prcl,
 	FLONG			fl)
 {
-	DbOut((0, "Entered routine DrvSetPointerShape\n"));
+	//DbOut((0, "Entered routine DrvSetPointerShape\n"));
 
 	// Get the PDEV for the current context.
 	PPDEV ppdev = ((PPDEV)(((SURFOBJ*)pso)->dhpdev));
@@ -486,4 +501,40 @@ ULONG DrvSetPointerShape(
 	}
 
 	return SPS_ACCEPT_NOEXCLUDE;
+}
+
+BOOL DrvAlphaBlend(
+	SURFOBJ* psoDst,
+	SURFOBJ* psoSrc,
+	CLIPOBJ* pco,
+	XLATEOBJ* pxlo,
+	RECTL* prclDst,
+	RECTL* prclSrc,
+	BLENDOBJ* pBlendObj)
+{
+	UNREFERENCED_PARAMETER(psoSrc);
+	UNREFERENCED_PARAMETER(pxlo);
+	UNREFERENCED_PARAMETER(prclSrc);
+	UNREFERENCED_PARAMETER(pBlendObj);
+
+	DbOut((0, "Entered routine DrvAlphaBlend\n"));
+
+	if (psoDst)
+	{
+		PPDEV ppdev = ((PPDEV)(((SURFOBJ*)psoDst)->dhpdev));
+
+		if (ppdev && &ppdev->iCb)
+		{
+			if (pco)
+			{
+				AddClipRegion(&ppdev->iCb, pco, prclDst);
+			}
+			else
+			{
+				AddChange(&ppdev->iCb, prclDst);
+			}
+		}
+	}
+
+	return EngAlphaBlend(psoDst, psoSrc, pco, pxlo, prclDst, prclSrc, pBlendObj);
 }
