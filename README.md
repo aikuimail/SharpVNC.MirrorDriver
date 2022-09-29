@@ -9,3 +9,7 @@ It is recommended that all development of the mirror driver is performed on a vi
 ### Compiling
 
 You should use Microsoft Visual Studio 2019 for development and compiling. Windows Driver Development Kit (WDK) 7.0, the Windows Software Development Kit (SDK) 8.1 and Microsoft Visual Studio Build Tools 2013 are required in order to successfully compile.
+
+## Licensing
+
+In line with industry conventions, this library is licensed proprietary for both binary and source distributions. For more information, please contact [support@sharpvnc.com](mailto:support@sharpvnc.com).
